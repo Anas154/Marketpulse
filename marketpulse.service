@@ -1,0 +1,14 @@
+[Unit]
+Description=MarketPulse Production App
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/anas/marketpulse-production
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
