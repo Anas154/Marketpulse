@@ -149,7 +149,7 @@ async function refreshDemoMarket() {
     if (alert.condition === 'monthly_low' && inst.current_price <= inst.low52 * 1.01) triggered = true;
     if (alert.condition === 'monthly_high' && inst.current_price >= inst.high52 * 0.99) triggered = true;
 
-    if (triggered) {
+    if (triggered && !alert.triggered_at) {
       await db.run(
         `UPDATE alerts SET triggered_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [alert.id]
@@ -161,6 +161,13 @@ async function refreshDemoMarket() {
       const emails = await db.get(`SELECT value FROM bot_state WHERE key = 'emails_sent'`);
       const count = Number(emails?.value || '0') + 1;
       await db.run(`INSERT OR REPLACE INTO bot_state(key, value) VALUES (?, ?)`, ['emails_sent', String(count)]);
+    }
+
+    if (!triggered && alert.triggered_at) {
+      await db.run(
+        `UPDATE alerts SET triggered_at = NULL WHERE id = ?`,
+        [alert.id]
+      );
     }
   }
 
@@ -278,11 +285,12 @@ app.get('/api/me', auth(true), async (req, res) => {
 
 app.get('/api/bootstrap', auth(false), async (req, res) => {
   const userId = req.user?.id || null;
-  const [instruments, logs, sectors, botState] = await Promise.all([
+  const isAdmin = req.user?.role === 'admin';
+  const [instruments, sectors, botState, logs] = await Promise.all([
     db.all(`SELECT * FROM instruments ORDER BY CASE type WHEN 'index' THEN 1 WHEN 'etf' THEN 2 WHEN 'stock' THEN 3 ELSE 4 END, symbol`),
-    db.all(`SELECT * FROM logs ORDER BY id DESC LIMIT 50`),
     Promise.resolve(SECTORS),
-    db.all(`SELECT key, value FROM bot_state`)
+    db.all(`SELECT key, value FROM bot_state`),
+    isAdmin ? db.all(`SELECT * FROM logs ORDER BY id DESC LIMIT 50`) : Promise.resolve([])
   ]);
 
   const alerts = userId
@@ -468,10 +476,10 @@ app.get('/api/screener', async (req, res) => {
   res.json(rows.map(publicInstrument));
 });
 
-app.use(express.static(path.join(__dirname, '..', '..', 'client', 'dist')));
+app.use(express.static(CLIENT_BUILD_PATH));
 
 app.use((_req, res) => {
-  const file = path.join(__dirname, '..', '..', 'client', 'dist', 'index.html');
+  const file = path.join(CLIENT_BUILD_PATH, 'index.html');
   if (fs.existsSync(file)) return res.sendFile(file);
   return res.status(200).send('<h1>MarketPulse API is running</h1><p>Build the client with <code>npm run build --prefix client</code>.</p>');
 });
