@@ -22,6 +22,7 @@ const {
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_BUILD_PATH = process.env.CLIENT_BUILD_PATH || path.join(__dirname, '..', '..', 'client', 'dist');
 const JWT_SECRET = process.env.JWT_SECRET || 'change_this_in_production';
+const CLIENT_ORIGIN = process.env.CLIENT_DEV_ORIGIN || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173';
 
 const app = express();
 
@@ -29,7 +30,7 @@ app.use(helmet({
   contentSecurityPolicy: false
 }));
 app.use(cors({
-  origin: process.env.CLIENT_DEV_ORIGIN || 'http://localhost:5173',
+  origin: CLIENT_ORIGIN,
   credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
@@ -415,7 +416,7 @@ async function start() {
     }
   });
 
-  app.listen(PORT, () => {
+  app.listen(PORT, '0.0.0.0', () => {
     console.log(`MarketPulse server running on http://localhost:${PORT}`);
   });
 }
