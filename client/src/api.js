@@ -1,3 +1,15 @@
+const DEFAULT_API_BASE_URL = import.meta.env.DEV
+  ? 'http://localhost:4000'
+  : 'https://marketpulse-ivi5.onrender.com';
+
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL).replace(/\/$/, '');
+
+function buildUrl(path) {
+  if (!path) return API_BASE_URL;
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE_URL}${normalizedPath}`;
+}
+
 export async function apiFetch(path, options = {}) {
   const token = localStorage.getItem('marketpulse_token');
   const headers = {
@@ -6,9 +18,10 @@ export async function apiFetch(path, options = {}) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(path, {
+  const res = await fetch(buildUrl(path), {
     ...options,
-    headers
+    headers,
+    mode: 'cors'
   });
 
   const text = await res.text();
