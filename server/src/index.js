@@ -49,7 +49,7 @@ let db;
 
 function signToken(user) {
   return jwt.sign(
-    { sub: user.id, email: user.email, displayName: user.display_name },
+    { sub: user.id, email: user.email, username: user.username, role: user.role, displayName: user.display_name },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -65,7 +65,7 @@ function auth(required = true) {
     }
     try {
       const payload = jwt.verify(token, JWT_SECRET);
-      const user = await db.get('SELECT id, email, display_name, created_at FROM users WHERE id = ?', [payload.sub]);
+      const user = await db.get('SELECT id, email, username, role, display_name, created_at FROM users WHERE id = ?', [payload.sub]);
       if (!user) return res.status(401).json({ error: 'Invalid session' });
       req.user = user;
       return next();
@@ -73,6 +73,14 @@ function auth(required = true) {
       return res.status(401).json({ error: 'Invalid session' });
     }
   };
+}
+
+
+function requireAdmin(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  return next();
 }
 
 async function getUserId(req, res) {
@@ -184,25 +192,88 @@ app.get('/health', async (_req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const schema = z.object({
-    email: z.string().email(),
+    identifier: z.string().min(2).optional(),
+    email: z.string().email().optional(),
     password: z.string().min(6)
-  });
+  }).refine((val) => Boolean(val.identifier || val.email), { message: 'Login identifier required' });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid credentials payload' });
 
-  const user = await db.get(`SELECT * FROM users WHERE email = ?`, [parsed.data.email]);
+  const rawIdentifier = parsed.data.identifier || parsed.data.email;
+  const identifier = String(rawIdentifier).trim();
+  const user = await db.get(`SELECT * FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)`, [identifier, identifier]);
   if (!user) return res.status(401).json({ error: 'Invalid email or password' });
   const ok = await bcrypt.compare(parsed.data.password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Invalid email or password' });
 
   res.json({
     token: signToken(user),
-    user: { id: user.id, email: user.email, displayName: user.display_name }
+    user: { id: user.id, email: user.email, username: user.username, role: user.role, displayName: user.display_name }
   });
 });
 
+
+app.post('/api/auth/register', async (req, res) => {
+  const schema = z.object({
+    email: z.string().email(),
+    username: z.string().min(3).max(24).regex(/^[A-Za-z0-9_]+$/),
+    displayName: z.string().min(2).max(60),
+    password: z.string().min(8)
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid registration payload' });
+
+  const email = parsed.data.email.trim().toLowerCase();
+  const username = parsed.data.username.trim();
+  const exists = await db.get(`SELECT id FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)`, [email, username]);
+  if (exists) return res.status(409).json({ error: 'Email or username already exists' });
+
+  const passwordHash = await bcrypt.hash(parsed.data.password, 10);
+  const result = await db.run(
+    `INSERT INTO users(email, username, password_hash, display_name, role) VALUES (?, ?, ?, ?, 'user')`,
+    [email, username, passwordHash, parsed.data.displayName.trim()]
+  );
+  const user = await db.get(`SELECT * FROM users WHERE id = ?`, [result.lastID]);
+
+  res.status(201).json({
+    token: signToken(user),
+    user: { id: user.id, email: user.email, username: user.username, role: user.role, displayName: user.display_name }
+  });
+});
+
+app.post('/api/admin/users', auth(true), requireAdmin, async (req, res) => {
+  const schema = z.object({
+    email: z.string().email(),
+    username: z.string().min(3).max(24).regex(/^[A-Za-z0-9_]+$/),
+    displayName: z.string().min(2).max(60),
+    password: z.string().min(8),
+    role: z.enum(['user', 'admin']).default('user')
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid user payload' });
+
+  const email = parsed.data.email.trim().toLowerCase();
+  const username = parsed.data.username.trim();
+  const exists = await db.get(`SELECT id FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)`, [email, username]);
+  if (exists) return res.status(409).json({ error: 'Email or username already exists' });
+
+  const hash = await bcrypt.hash(parsed.data.password, 10);
+  const result = await db.run(
+    `INSERT INTO users(email, username, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
+    [email, username, hash, parsed.data.displayName.trim(), parsed.data.role]
+  );
+
+  const user = await db.get(`SELECT id, email, username, role, display_name, created_at FROM users WHERE id = ?`, [result.lastID]);
+  res.status(201).json({ user });
+});
+
+app.get('/api/admin/users', auth(true), requireAdmin, async (_req, res) => {
+  const users = await db.all(`SELECT id, email, username, role, display_name, created_at FROM users ORDER BY created_at DESC`);
+  res.json(users);
+});
+
 app.get('/api/me', auth(true), async (req, res) => {
-  res.json({ user: { id: req.user.id, email: req.user.email, displayName: req.user.display_name } });
+  res.json({ user: { id: req.user.id, email: req.user.email, username: req.user.username, role: req.user.role, displayName: req.user.display_name } });
 });
 
 app.get('/api/bootstrap', auth(false), async (req, res) => {
@@ -226,7 +297,7 @@ app.get('/api/bootstrap', auth(false), async (req, res) => {
     : [];
 
   res.json({
-    user: req.user ? { id: req.user.id, email: req.user.email, displayName: req.user.display_name } : null,
+    user: req.user ? { id: req.user.id, email: req.user.email, username: req.user.username, role: req.user.role, displayName: req.user.display_name } : null,
     instruments: instruments.map(publicInstrument),
     sectors,
     alerts,
@@ -357,7 +428,7 @@ app.delete('/api/alerts/:id', auth(true), async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/logs', auth(false), async (_req, res) => {
+app.get('/api/logs', auth(true), requireAdmin, async (_req, res) => {
   const rows = await db.all(`SELECT * FROM logs ORDER BY id DESC LIMIT 100`);
   res.json(rows);
 });
