@@ -13,6 +13,14 @@ async function openDb() {
   });
 }
 
+async function ensureColumn(db, table, column, sqlType) {
+  const info = await db.all(`PRAGMA table_info(${table})`);
+  const hasColumn = info.some((c) => c.name === column);
+  if (!hasColumn) {
+    await db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${sqlType}`);
+  }
+}
+
 async function ensureSchema(db) {
   await db.exec(`
     PRAGMA journal_mode = WAL;
@@ -89,6 +97,10 @@ async function ensureSchema(db) {
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  await ensureColumn(db, 'users', 'username', 'TEXT');
+  await ensureColumn(db, 'users', 'role', "TEXT NOT NULL DEFAULT 'user'");
+  await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)');
 }
 
 module.exports = {

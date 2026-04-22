@@ -10,13 +10,23 @@ async function seed() {
 
   const demoEmail = process.env.DEMO_EMAIL || 'demo@marketpulse.local';
   const demoPassword = process.env.DEMO_PASSWORD || 'Password123!';
-  const passwordHash = await bcrypt.hash(demoPassword, 10);
+  const demoHash = await bcrypt.hash(demoPassword, 10);
 
   await db.run(
-    `INSERT OR IGNORE INTO users(email, password_hash, display_name)
-     VALUES (?, ?, ?)`,
-    [demoEmail, passwordHash, 'Demo Analyst']
+    `INSERT OR IGNORE INTO users(email, username, password_hash, display_name, role)
+     VALUES (?, ?, ?, ?, ?)`,
+    [demoEmail, 'demo', demoHash, 'Demo Analyst', 'user']
   );
+
+  const adminHash = await bcrypt.hash('Admin@1234', 10);
+  await db.run(
+    `INSERT OR IGNORE INTO users(email, username, password_hash, display_name, role)
+     VALUES (?, ?, ?, ?, ?)`,
+    ['admin@marketpulse.local', 'Admin', adminHash, 'System Admin', 'admin']
+  );
+
+  await db.run(`UPDATE users SET username = LOWER(SUBSTR(email, 1, INSTR(email, '@') - 1)) WHERE username IS NULL OR TRIM(username) = ''`);
+  await db.run(`UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''`);
 
   const user = await db.get(`SELECT * FROM users WHERE email = ?`, [demoEmail]);
 
@@ -76,6 +86,7 @@ async function seed() {
     const sampleLogs = [
       ['info', 'MarketPulse started — demo environment seeded'],
       ['info', `Demo login ready — ${demoEmail}`],
+      ['info', 'Admin login ready — Admin / Admin@1234'],
       ['info', 'NSE session initialized — tracking 24 instruments'],
       ['info', 'Gmail App Password auth configured'],
       ['info', 'systemd service can be enabled for boot start'],
