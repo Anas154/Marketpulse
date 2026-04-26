@@ -78,6 +78,9 @@ Then open `http://localhost:4000`
 - Chart.js uses a real time scale for date-based axes.
 - SQLite is used because it is self-contained and zero-configuration.
 - The backend seeds realistic historical OHLC data, watchlist entries, alerts, and logs.
+- For split deployments such as `Vercel frontend + Render backend`, set `VITE_API_BASE_URL` in the frontend environment instead of relying on a hardcoded production hostname.
+- SMTP alerts are server-managed. Configure `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` on the backend before expecting user alert emails or admin test mail to work.
+- Portfolio uploads now support direct CSV or JSON ingestion. Uploaded files are stored under `PORTFOLIO_UPLOAD_DIR` for audit/manual review, while unsupported statement formats can still be captured there for follow-up mapping.
 
 ## Systemd option
 

@@ -5,5 +5,9 @@ server/.env
 server/data/marketpulse.db
 server/data/marketpulse.db-wal
 server/data/marketpulse.db-shm
+server/data/uploads/
 client/dist
 .DS_Store
+.codex-runs/
+.vscode/
+review-artifacts/

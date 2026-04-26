@@ -21,8 +21,10 @@ const INSTRUMENTS = [
   { sym: 'HCLTECH', name: 'HCL Technologies', type: 'stock', exchange: 'NSE', sector: 'Information Technology', currentPrice: 1589.30, changePct: -0.45, high52: 1976.80, low52: 1235.00, inav: null },
   { sym: 'MIRAE_ELSS', name: 'Mirae Asset Tax Saver Fund', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 38.92, changePct: 1.02, high52: 41.20, low52: 30.14, inav: null },
   { sym: 'PARAG_FLEXI', name: 'Parag Parikh Flexi Cap', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 83.45, changePct: 0.73, high52: 87.30, low52: 61.20, inav: null },
+  { sym: 'MOTILAL_LARGE', name: 'Motilal Oswal Large Cap Fund', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 54.88, changePct: 0.62, high52: 58.10, low52: 44.20, inav: null },
   { sym: 'HDFC_MID', name: 'HDFC Midcap Opportunities', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 148.72, changePct: 1.45, high52: 157.80, low52: 108.60, inav: null },
-  { sym: 'QUANT_SMALL', name: 'Quant Small Cap Fund', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 312.50, changePct: 2.10, high52: 347.90, low52: 210.80, inav: null }
+  { sym: 'QUANT_SMALL', name: 'Quant Small Cap Fund', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 312.50, changePct: 2.10, high52: 347.90, low52: 210.80, inav: null },
+  { sym: 'NIPPON_SMALL', name: 'Nippon India Small Cap Fund', type: 'mf', exchange: 'NSE', sector: 'Mutual Fund', currentPrice: 72.90, changePct: 1.84, high52: 81.44, low52: 52.28, inav: null }
 ];
 
 const SECTORS = [
@@ -48,9 +50,28 @@ const DEFAULT_ALERTS = [
 
 const DEFAULT_WATCHLIST = ['GOLDBEES', 'RELIANCE', 'TCS', 'NIFTY50', 'HDFCBANK', 'SILVERBEES'];
 
+const PORTFOLIO_TEMPLATES = {
+  'demo@marketpulse.local': [
+    { symbol: 'PARAG_FLEXI', units: 12.2, avgCost: 76.8, source: 'demo_fetch' },
+    { symbol: 'HDFC_MID', units: 8.6, avgCost: 140.4, source: 'demo_fetch' },
+    { symbol: 'NIFTYBEES', units: 10.0, avgCost: 232.0, source: 'demo_fetch' }
+  ],
+  'admin@marketpulse.local': [
+    { symbol: 'GOLDBEES', units: 16.0, avgCost: 118.4, source: 'demo_fetch' },
+    { symbol: 'RELIANCE', units: 2.0, avgCost: 2844.0, source: 'demo_fetch' },
+    { symbol: 'LIQUIDBEES', units: 6.0, avgCost: 999.9, source: 'demo_fetch' }
+  ],
+  'anasquazi1@gmail.com': [
+    { symbol: 'PARAG_FLEXI', units: 18.44, avgCost: 79.12, source: 'email_fetch' },
+    { symbol: 'MOTILAL_LARGE', units: 22.15, avgCost: 51.38, source: 'email_fetch' },
+    { symbol: 'NIPPON_SMALL', units: 31.72, avgCost: 68.04, source: 'email_fetch' }
+  ]
+};
+
 module.exports = {
   INSTRUMENTS,
   SECTORS,
   DEFAULT_ALERTS,
-  DEFAULT_WATCHLIST
+  DEFAULT_WATCHLIST,
+  PORTFOLIO_TEMPLATES
 };
