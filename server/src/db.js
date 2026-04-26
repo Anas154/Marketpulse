@@ -90,17 +90,55 @@ async function ensureSchema(db) {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS portfolio_holdings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      symbol TEXT NOT NULL,
+      units REAL NOT NULL,
+      avg_cost REAL NOT NULL,
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, symbol),
+      FOREIGN KEY(user_id) REFERENCES users(id),
+      FOREIGN KEY(symbol) REFERENCES instruments(symbol)
+    );
+
     CREATE TABLE IF NOT EXISTS logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       level TEXT NOT NULL,
       message TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS portfolio_imports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      original_name TEXT NOT NULL,
+      stored_name TEXT NOT NULL,
+      mime_type TEXT,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL,
+      provider_name TEXT,
+      status TEXT NOT NULL,
+      summary_json TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
   `);
 
   await ensureColumn(db, 'users', 'username', 'TEXT');
   await ensureColumn(db, 'users', 'role', "TEXT NOT NULL DEFAULT 'user'");
+  await ensureColumn(db, 'users', 'pan', 'TEXT');
+  await ensureColumn(db, 'users', 'onboarding_completed', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'users', 'onboarding_step', "TEXT NOT NULL DEFAULT 'welcome'");
+  await ensureColumn(db, 'users', 'onboarding_json', 'TEXT');
+  await ensureColumn(db, 'users', 'email_alerts_enabled', 'INTEGER NOT NULL DEFAULT 1');
+  await ensureColumn(db, 'users', 'timezone', "TEXT NOT NULL DEFAULT 'Asia/Kolkata'");
+  await ensureColumn(db, 'alerts', 'last_sent_at', 'TEXT');
   await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_portfolio_holdings_user_id ON portfolio_holdings(user_id)');
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_portfolio_imports_user_id ON portfolio_imports(user_id)');
 }
 
 module.exports = {

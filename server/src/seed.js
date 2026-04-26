@@ -1,6 +1,6 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { INSTRUMENTS, SECTORS, DEFAULT_ALERTS, DEFAULT_WATCHLIST } = require('./data');
+const { INSTRUMENTS, DEFAULT_ALERTS, DEFAULT_WATCHLIST, PORTFOLIO_TEMPLATES } = require('./data');
 const { openDb, ensureSchema } = require('./db');
 const { generateHistory } = require('./market');
 
@@ -25,8 +25,24 @@ async function seed() {
     ['admin@marketpulse.local', 'Admin', adminHash, 'System Admin', 'admin']
   );
 
+  await db.run(
+    `UPDATE users
+     SET username = ?, password_hash = ?, display_name = ?, role = ?
+     WHERE lower(email) = lower(?)`,
+    ['admin', adminHash, 'System Admin', 'admin', 'admin@marketpulse.local']
+  );
+
   await db.run(`UPDATE users SET username = LOWER(SUBSTR(email, 1, INSTR(email, '@') - 1)) WHERE username IS NULL OR TRIM(username) = ''`);
   await db.run(`UPDATE users SET role = 'user' WHERE role IS NULL OR TRIM(role) = ''`);
+  await db.run(
+    `UPDATE users
+     SET onboarding_completed = 1,
+         onboarding_step = 'done',
+         email_alerts_enabled = 1,
+         timezone = COALESCE(timezone, 'Asia/Kolkata')
+     WHERE email IN (?, ?)`,
+    [demoEmail, 'admin@marketpulse.local']
+  );
 
   const user = await db.get(`SELECT * FROM users WHERE email = ?`, [demoEmail]);
 
@@ -102,6 +118,17 @@ async function seed() {
   if (!watchCount.count) {
     for (const symbol of DEFAULT_WATCHLIST) {
       await db.run(`INSERT INTO watchlists(user_id, symbol) VALUES (?, ?)`, [user.id, symbol]);
+    }
+  }
+
+  const portfolioCount = await db.get(`SELECT COUNT(*) AS count FROM portfolio_holdings`);
+  if (!portfolioCount.count) {
+    for (const holding of (PORTFOLIO_TEMPLATES[demoEmail] || [])) {
+      await db.run(
+        `INSERT INTO portfolio_holdings(user_id, symbol, units, avg_cost, source)
+         VALUES (?, ?, ?, ?, ?)`,
+        [user.id, holding.symbol, holding.units, holding.avgCost, holding.source]
+      );
     }
   }
 
