@@ -29,23 +29,35 @@ jobs:
         with:
           node-version: 20
 
+      - name: Validate required secrets
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+          NORTHFLANK_PROJECT_ID: ${{ secrets.NORTHFLANK_PROJECT_ID }}
+          NORTHFLANK_SERVICE_ID: ${{ secrets.NORTHFLANK_SERVICE_ID }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SMTP_CREDENTIALS_SECRET: ${{ secrets.SMTP_CREDENTIALS_SECRET }}
+        run: |
+          if [ -z "$NORTHFLANK_API_KEY" ] || [ -z "$NORTHFLANK_PROJECT_ID" ] || [ -z "$NORTHFLANK_SERVICE_ID" ] || [ -z "$JWT_SECRET" ] || [ -z "$SMTP_CREDENTIALS_SECRET" ]; then
+            echo "NORTHFLANK_API_KEY, NORTHFLANK_PROJECT_ID, NORTHFLANK_SERVICE_ID, JWT_SECRET, and SMTP_CREDENTIALS_SECRET are required."
+            exit 1
+          fi
+
+      - name: Configure Northflank Service Guardrails
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+          NORTHFLANK_PROJECT_ID: ${{ secrets.NORTHFLANK_PROJECT_ID }}
+          NORTHFLANK_SERVICE_ID: ${{ secrets.NORTHFLANK_SERVICE_ID }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SMTP_CREDENTIALS_SECRET: ${{ secrets.SMTP_CREDENTIALS_SECRET }}
+          CLIENT_PROD_ORIGIN: https://anas154.github.io
+        run: node scripts/configure-northflank-service.mjs
+
       - name: Enforce Cost Policy
         env:
           NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
           NORTHFLANK_PROJECT_ID: ${{ secrets.NORTHFLANK_PROJECT_ID }}
           NORTHFLANK_SERVICE_ID: ${{ secrets.NORTHFLANK_SERVICE_ID }}
         run: node scripts/enforce-cost-policy.mjs
-
-      - name: Validate required secrets
-        env:
-          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
-          NORTHFLANK_PROJECT_ID: ${{ secrets.NORTHFLANK_PROJECT_ID }}
-          NORTHFLANK_SERVICE_ID: ${{ secrets.NORTHFLANK_SERVICE_ID }}
-        run: |
-          if [ -z "$NORTHFLANK_API_KEY" ] || [ -z "$NORTHFLANK_PROJECT_ID" ] || [ -z "$NORTHFLANK_SERVICE_ID" ]; then
-            echo "NORTHFLANK_API_KEY, NORTHFLANK_PROJECT_ID, and NORTHFLANK_SERVICE_ID are required."
-            exit 1
-          fi
 
       - name: Set image tags
         id: meta
@@ -89,3 +101,25 @@ jobs:
           service-id: ${{ secrets.NORTHFLANK_SERVICE_ID }}
           image-path: ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha_tag }}
           credentials-id: ${{ secrets.NORTHFLANK_CREDENTIALS_ID }}
+
+      - name: Re-apply Northflank Runtime Guardrails
+        env:
+          NORTHFLANK_API_KEY: ${{ secrets.NORTHFLANK_API_KEY }}
+          NORTHFLANK_PROJECT_ID: ${{ secrets.NORTHFLANK_PROJECT_ID }}
+          NORTHFLANK_SERVICE_ID: ${{ secrets.NORTHFLANK_SERVICE_ID }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SMTP_CREDENTIALS_SECRET: ${{ secrets.SMTP_CREDENTIALS_SECRET }}
+          CLIENT_PROD_ORIGIN: https://anas154.github.io
+        run: node scripts/configure-northflank-service.mjs
+
+      - name: Verify Live Service
+        env:
+          NORTHFLANK_API_BASE_URL: ${{ secrets.NORTHFLANK_API_BASE_URL }}
+        run: |
+          if [ -z "$NORTHFLANK_API_BASE_URL" ]; then
+            echo "NORTHFLANK_API_BASE_URL is required for live verification."
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 12 --retry-delay 10 --retry-all-errors "$NORTHFLANK_API_BASE_URL/health"
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors "$NORTHFLANK_API_BASE_URL/api/bootstrap" > /tmp/bootstrap.json
+          node -e "const fs=require('fs'); const data=JSON.parse(fs.readFileSync('/tmp/bootstrap.json','utf8')); if(!Array.isArray(data.instruments)){throw new Error('bootstrap instruments missing')} console.log('Live bootstrap verified:', data.instruments.length, 'instruments')"

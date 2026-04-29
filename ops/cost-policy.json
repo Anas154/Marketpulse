@@ -1,13 +1,21 @@
 {
   "northflank": {
-    "maxServices": 2,
-    "maxJobs": 2,
-    "maxAddons": 1,
+    "maxServices": 1,
+    "maxJobs": 0,
+    "maxAddons": 0,
+    "maxVolumes": 0,
     "maxReplicasPerService": 1,
     "allowedDeploymentPlans": ["nf-compute-10"],
-    "allowServiceCreation": true,
+    "allowedServiceIds": ["marketpulse-api"],
+    "allowedPublicPorts": [4000],
+    "maxPublicPortsPerService": 1,
+    "maxEphemeralStorageMb": 1024,
+    "maxSharedMemoryMb": 64,
+    "allowServiceCreation": false,
     "allowJobCreation": false,
-    "allowAddonCreation": false
+    "allowAddonCreation": false,
+    "allowVolumeCreation": false,
+    "requireServiceId": true
   },
   "repo": {
     "disallowWorkflowScheduleCron": true

@@ -119,8 +119,20 @@ Database: ./server/data/marketpulse.db
 ### Production (Northflank)
 ```
 Backend + Frontend: Northflank deployment URL (single Docker service)
-Database: SQLite with persistent volume mount (or PostgreSQL if you migrate later)
+Database: SQLite on ephemeral container storage for the current free-safe setup
 ```
+
+Required production env values are applied by GitHub Actions from repository secrets:
+
+```env
+PORT=4000
+JWT_SECRET=<generate-a-long-random-secret>
+SMTP_CREDENTIALS_SECRET=<generate-a-long-random-secret>
+DATABASE_PATH=/app/server/data/marketpulse.db
+PORTFOLIO_UPLOAD_DIR=/app/server/data/uploads
+```
+
+Current cost guardrails disallow Northflank jobs, addons, volumes, extra services, extra replicas, and workflow cron schedules. Add a persistent volume or managed database only after explicit cost approval.
 
 ---
 

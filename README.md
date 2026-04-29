@@ -91,7 +91,8 @@ Then open `http://localhost:4000`
 - Build source: `Dockerfile` at repository root.
 - Exposed port: `4000`.
 - Health check path: `/health`.
-- Add a persistent volume mounted at `/app/server/data` to keep SQLite data across deploys.
+- Free-safe default: no persistent volume, no jobs, no addons, and no extra services. SQLite data is stored on ephemeral container storage and can reset on redeploy/restart.
+- Add a persistent volume mounted at `/app/server/data` only after explicit cost approval and a policy update.
 - Set:
   - `DATABASE_PATH=/app/server/data/marketpulse.db`
   - `PORTFOLIO_UPLOAD_DIR=/app/server/data/uploads`
@@ -109,6 +110,8 @@ Then open `http://localhost:4000`
   - `NORTHFLANK_API_KEY`
   - `NORTHFLANK_PROJECT_ID`
   - `NORTHFLANK_SERVICE_ID`
+  - `JWT_SECRET`
+  - `SMTP_CREDENTIALS_SECRET`
 - Optional secret (if image registry credentials are required in Northflank):
   - `NORTHFLANK_CREDENTIALS_ID`
 - Optional for GitHub Pages frontend builds:
@@ -124,15 +127,20 @@ This repository includes a strict cost policy with CI enforcement:
 
 Current enforced rules:
 
-- Max 2 services in project
-- Max 2 jobs in project
-- Max 1 addon in project
+- Max 1 service in project (`marketpulse-api`)
+- Max 0 jobs in project
+- Max 0 addons in project
+- Max 0 volumes in project
 - Max 1 replica per service
 - Only `nf-compute-10` deployment plan allowed
-- Job/addon creation disallowed by policy
+- Only public port `4000` is allowed
+- Ephemeral storage is capped at 1024 MB and shared memory at 64 MB
+- Service/job/addon/volume creation beyond the approved service is disallowed by policy
 - GitHub workflow cron/schedule triggers disallowed
 
-`northflank-deploy.yml` runs policy enforcement before deploy and fails fast if policy is violated.
+`northflank-deploy.yml` applies the approved Northflank service configuration, runs policy enforcement before deploy, deploys the Docker image, reapplies runtime guardrails, and verifies `/health` plus `/api/bootstrap`.
+
+The app uses an in-process Node cron loop for market refresh/alert checks. It does not create a Northflank cron job, so it does not consume the Northflank job quota.
 
 Recommended account-level controls in Northflank UI:
 
