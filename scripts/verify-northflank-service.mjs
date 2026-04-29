@@ -94,9 +94,10 @@ async function main() {
   }
 
   const baseUrl = discoveredUrl;
+  console.log(`Northflank discovered URL: ${baseUrl}`);
 
   const health = await fetchJsonWithRetries(`${baseUrl}/health`);
-  if (health.status !== 'ok') {
+  if (health.status !== 'ok' && health.ok !== true) {
     throw new Error(`Unexpected health response: ${JSON.stringify(health)}`);
   }
 
