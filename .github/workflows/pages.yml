@@ -37,6 +37,8 @@ jobs:
 
       - name: Build client
         working-directory: client
+        env:
+          VITE_API_BASE_URL: https://marketpulse-ivi5.onrender.com
         run: npm run build
 
       - name: Upload Pages artifact
