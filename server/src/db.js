@@ -135,6 +135,13 @@ async function ensureSchema(db) {
   await ensureColumn(db, 'users', 'onboarding_json', 'TEXT');
   await ensureColumn(db, 'users', 'email_alerts_enabled', 'INTEGER NOT NULL DEFAULT 1');
   await ensureColumn(db, 'users', 'timezone', "TEXT NOT NULL DEFAULT 'Asia/Kolkata'");
+  await ensureColumn(db, 'users', 'smtp_enabled', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'users', 'smtp_host', 'TEXT');
+  await ensureColumn(db, 'users', 'smtp_port', 'INTEGER NOT NULL DEFAULT 587');
+  await ensureColumn(db, 'users', 'smtp_secure', 'INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn(db, 'users', 'smtp_user', 'TEXT');
+  await ensureColumn(db, 'users', 'smtp_pass_enc', 'TEXT');
+  await ensureColumn(db, 'users', 'smtp_from', 'TEXT');
   await ensureColumn(db, 'alerts', 'last_sent_at', 'TEXT');
   await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)');
   await db.exec('CREATE INDEX IF NOT EXISTS idx_portfolio_holdings_user_id ON portfolio_holdings(user_id)');

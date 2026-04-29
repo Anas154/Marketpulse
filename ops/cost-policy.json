@@ -1,0 +1,15 @@
+{
+  "northflank": {
+    "maxServices": 2,
+    "maxJobs": 2,
+    "maxAddons": 1,
+    "maxReplicasPerService": 1,
+    "allowedDeploymentPlans": ["nf-compute-10"],
+    "allowServiceCreation": true,
+    "allowJobCreation": false,
+    "allowAddonCreation": false
+  },
+  "repo": {
+    "disallowWorkflowScheduleCron": true
+  }
+}

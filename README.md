@@ -78,9 +78,68 @@ Then open `http://localhost:4000`
 - Chart.js uses a real time scale for date-based axes.
 - SQLite is used because it is self-contained and zero-configuration.
 - The backend seeds realistic historical OHLC data, watchlist entries, alerts, and logs.
-- For split deployments such as `Vercel frontend + Render backend`, set `VITE_API_BASE_URL` in the frontend environment instead of relying on a hardcoded production hostname.
-- SMTP alerts are server-managed. Configure `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` on the backend before expecting user alert emails or admin test mail to work.
+- For split deployments (for example GitHub Pages + API service), set `VITE_API_BASE_URL` in frontend build environment.
+- SMTP can now be configured in two ways:
+  - App-level SMTP on backend env vars (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`) for shared delivery.
+  - Per-user SMTP in Settings (or at Sign Up). User SMTP is preferred for that account, with backend SMTP as fallback.
 - Portfolio uploads now support direct CSV or JSON ingestion. Uploaded files are stored under `PORTFOLIO_UPLOAD_DIR` for audit/manual review, while unsupported statement formats can still be captured there for follow-up mapping.
+
+## Northflank Deployment
+
+- This repo now deploys to Northflank with Docker (`Dockerfile` in repo root).
+- Create a Northflank service from this repository branch `main`.
+- Build source: `Dockerfile` at repository root.
+- Exposed port: `4000`.
+- Health check path: `/health`.
+- Add a persistent volume mounted at `/app/server/data` to keep SQLite data across deploys.
+- Set:
+  - `DATABASE_PATH=/app/server/data/marketpulse.db`
+  - `PORTFOLIO_UPLOAD_DIR=/app/server/data/uploads`
+  - `JWT_SECRET=<secure random>`
+  - `SMTP_CREDENTIALS_SECRET=<secure random>`
+  - Optional shared SMTP envs (`SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`)
+
+### Auto Deploy On Every GitHub Commit
+
+- Your Northflank team must link GitHub first (your current dashboard shows no VCS linked).
+- Workflow `.github/workflows/northflank-deploy.yml` is included and does:
+  1. Build and push image to GHCR on each push to `main`
+  2. Deploy that image to a Northflank deployment service using the official Northflank GitHub action
+- Required repository secrets:
+  - `NORTHFLANK_API_KEY`
+  - `NORTHFLANK_PROJECT_ID`
+  - `NORTHFLANK_SERVICE_ID`
+- Optional secret (if image registry credentials are required in Northflank):
+  - `NORTHFLANK_CREDENTIALS_ID`
+- Optional for GitHub Pages frontend builds:
+  - `NORTHFLANK_API_BASE_URL` (for `.github/workflows/pages.yml`)
+
+## Cost Control Guardrails
+
+This repository includes a strict cost policy with CI enforcement:
+
+- Policy file: `ops/cost-policy.json`
+- Enforcement script: `scripts/enforce-cost-policy.mjs`
+- CI workflow gate: `.github/workflows/cost-guard.yml`
+
+Current enforced rules:
+
+- Max 2 services in project
+- Max 2 jobs in project
+- Max 1 addon in project
+- Max 1 replica per service
+- Only `nf-compute-10` deployment plan allowed
+- Job/addon creation disallowed by policy
+- GitHub workflow cron/schedule triggers disallowed
+
+`northflank-deploy.yml` runs policy enforcement before deploy and fails fast if policy is violated.
+
+Recommended account-level controls in Northflank UI:
+
+1. Keep team on Sandbox plan while testing
+2. Configure billing alerts at low thresholds (for example $1, $3, $5)
+3. Enable invoice/billing emails for at least two addresses
+4. Review usage dashboard before any scale/plan change
 
 ## Systemd option
 

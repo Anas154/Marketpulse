@@ -12,7 +12,13 @@ const multer = require('multer');
 const { z } = require('zod');
 const { openDb, ensureSchema } = require('./db');
 const { INSTRUMENTS, SECTORS, PORTFOLIO_TEMPLATES } = require('./data');
-const { getPublicMailStatus, isMailConfigured, sendAlertEmail } = require('./mailer');
+const {
+  encryptSecret,
+  getUserMailConfig,
+  getPublicMailStatus,
+  isMailConfigured,
+  sendAlertEmail
+} = require('./mailer');
 const {
   generateHistory,
   generateIntraday,
@@ -40,8 +46,7 @@ const upload = multer({
 
 const allowedOrigins = new Set([
   process.env.CLIENT_DEV_ORIGIN || 'http://localhost:5173',
-  process.env.CLIENT_PROD_ORIGIN || 'https://anas154.github.io',
-  process.env.RENDER_EXTERNAL_URL
+  process.env.CLIENT_PROD_ORIGIN || 'https://anas154.github.io'
 ].filter(Boolean));
 
 function isAllowedLocalOrigin(origin) {
@@ -89,6 +94,44 @@ function parseJsonSafely(value, fallback = {}) {
 
 function uniqueImportAssetTypes(values) {
   return [...new Set((values || []).filter((value) => PORTFOLIO_IMPORT_ASSET_TYPES.has(value)))];
+}
+
+function toBoolean(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  return String(value || '').toLowerCase() === 'true';
+}
+
+function sanitizeSmtpInput(input = {}, { keepExistingPassword = false } = {}) {
+  const enabled = toBoolean(input.enabled);
+  const secure = toBoolean(input.secure);
+  const host = String(input.host || '').trim();
+  const user = String(input.user || '').trim();
+  const from = String(input.from || user).trim();
+  const rawPass = String(input.pass || '').trim();
+  const pass = rawPass || (keepExistingPassword ? null : '');
+  const portRaw = Number(input.port || 587);
+  const port = Number.isFinite(portRaw) && portRaw > 0 ? portRaw : 587;
+
+  return {
+    enabled,
+    host,
+    port,
+    secure,
+    user,
+    pass,
+    from
+  };
+}
+
+function validateSmtpInput(smtp) {
+  if (!smtp.enabled) return [];
+  const errors = [];
+  if (!smtp.host) errors.push('SMTP host is required when user SMTP is enabled.');
+  if (!smtp.user) errors.push('SMTP user is required when user SMTP is enabled.');
+  if (!smtp.from) errors.push('SMTP from address is required when user SMTP is enabled.');
+  if (!smtp.pass) errors.push('SMTP password or app password is required when user SMTP is enabled.');
+  return errors;
 }
 
 function sanitizePortfolioImportRequest(input = {}) {
@@ -140,7 +183,14 @@ function serializeUser(user) {
     onboardingStep: user.onboarding_step || 'welcome',
     onboarding: parseJsonSafely(user.onboarding_json),
     emailAlertsEnabled: Boolean(user.email_alerts_enabled),
-    timezone: user.timezone || 'Asia/Kolkata'
+    timezone: user.timezone || 'Asia/Kolkata',
+    smtpEnabled: Boolean(user.smtp_enabled),
+    smtpConfigured: Boolean(getUserMailConfig(user)),
+    smtpHost: user.smtp_host || '',
+    smtpPort: Number(user.smtp_port || 587),
+    smtpSecure: Boolean(user.smtp_secure),
+    smtpUser: user.smtp_user || '',
+    smtpFrom: user.smtp_from || ''
   };
 }
 
@@ -554,7 +604,8 @@ async function sendAlertNotification({ alert, instrument, currentValue, metricLa
     to: alert.email,
     subject,
     text: lines.join('\n'),
-    html
+    html,
+    smtpConfig: getUserMailConfig(alert)
   });
 
   if (result.ok) {
@@ -612,7 +663,7 @@ function auth(required = true) {
       const payload = jwt.verify(token, JWT_SECRET);
       const user = await db.get(
         `SELECT id, email, username, role, display_name, pan, onboarding_completed, onboarding_step, onboarding_json,
-                email_alerts_enabled, timezone, created_at
+                email_alerts_enabled, timezone, smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_enc, smtp_from, created_at
          FROM users
          WHERE id = ?`,
         [payload.sub]
@@ -686,7 +737,9 @@ async function refreshDemoMarket() {
   }
 
   const activeAlerts = await db.all(
-    `SELECT a.*, u.email, u.display_name, u.email_alerts_enabled, u.timezone FROM alerts a
+    `SELECT a.*, u.email, u.display_name, u.email_alerts_enabled, u.timezone,
+            u.smtp_enabled, u.smtp_host, u.smtp_port, u.smtp_secure, u.smtp_user, u.smtp_pass_enc, u.smtp_from
+     FROM alerts a
      JOIN users u ON u.id = a.user_id
      WHERE a.enabled = 1`
   );
@@ -818,7 +871,16 @@ app.post('/api/auth/register', async (req, res) => {
     email: z.string().email(),
     username: z.string().min(3).max(24).regex(/^[A-Za-z0-9_]+$/),
     displayName: z.string().min(2).max(60),
-    password: z.string().min(8)
+    password: z.string().min(8),
+    smtp: z.object({
+      enabled: z.boolean().optional(),
+      host: z.string().trim().max(120).optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+      secure: z.boolean().optional(),
+      user: z.string().trim().max(180).optional(),
+      pass: z.string().trim().max(200).optional(),
+      from: z.string().trim().max(180).optional()
+    }).optional()
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid registration payload' });
@@ -828,10 +890,27 @@ app.post('/api/auth/register', async (req, res) => {
   const exists = await db.get(`SELECT id FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)`, [email, username]);
   if (exists) return res.status(409).json({ error: 'Email or username already exists' });
 
+  const smtpInput = sanitizeSmtpInput(parsed.data.smtp || {});
+  const smtpErrors = validateSmtpInput(smtpInput);
+  if (smtpErrors.length) return res.status(400).json({ error: smtpErrors[0] });
+
   const passwordHash = await bcrypt.hash(parsed.data.password, 10);
   const result = await db.run(
-    `INSERT INTO users(email, username, password_hash, display_name, role) VALUES (?, ?, ?, ?, 'user')`,
-    [email, username, passwordHash, parsed.data.displayName.trim()]
+    `INSERT INTO users(email, username, password_hash, display_name, role, smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_enc, smtp_from)
+     VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      email,
+      username,
+      passwordHash,
+      parsed.data.displayName.trim(),
+      smtpInput.enabled ? 1 : 0,
+      smtpInput.host || null,
+      smtpInput.port,
+      smtpInput.secure ? 1 : 0,
+      smtpInput.user || null,
+      smtpInput.pass ? encryptSecret(smtpInput.pass) : null,
+      smtpInput.from || null
+    ]
   );
   const user = await db.get(`SELECT * FROM users WHERE id = ?`, [result.lastID]);
 
@@ -920,7 +999,7 @@ app.get('/api/bootstrap', auth(false), async (req, res) => {
     portfolioSummary,
     dashboard,
     logs,
-    mailStatus: getPublicMailStatus(),
+    mailStatus: getPublicMailStatus(req.user),
     botState: Object.fromEntries(botState.map((x) => [x.key, x.value])),
     marketStatus: currentMarketStatus(),
     defaultSymbol: portfolio[0]?.symbol || watchlist[0]?.symbol || 'GOLDBEES'
@@ -1011,7 +1090,7 @@ app.post('/api/onboarding/complete', auth(true), async (req, res) => {
 
   const user = await db.get(
     `SELECT id, email, username, role, display_name, pan, onboarding_completed, onboarding_step, onboarding_json,
-            email_alerts_enabled, timezone, created_at
+            email_alerts_enabled, timezone, smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_enc, smtp_from, created_at
      FROM users
      WHERE id = ?`,
     [req.user.id]
@@ -1032,7 +1111,16 @@ app.patch('/api/profile', auth(true), async (req, res) => {
     displayName: z.string().trim().min(2).max(60),
     username: z.string().trim().min(3).max(24).regex(/^[A-Za-z0-9_]+$/),
     emailAlertsEnabled: z.boolean().optional(),
-    timezone: z.string().trim().min(3).max(60).optional()
+    timezone: z.string().trim().min(3).max(60).optional(),
+    smtp: z.object({
+      enabled: z.boolean().optional(),
+      host: z.string().trim().max(120).optional(),
+      port: z.number().int().min(1).max(65535).optional(),
+      secure: z.boolean().optional(),
+      user: z.string().trim().max(180).optional(),
+      pass: z.string().trim().max(200).optional(),
+      from: z.string().trim().max(180).optional()
+    }).optional()
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid profile payload' });
@@ -1047,22 +1135,43 @@ app.patch('/api/profile', auth(true), async (req, res) => {
   );
   if (exists) return res.status(409).json({ error: 'Username already exists' });
 
+  const smtpInput = sanitizeSmtpInput(parsed.data.smtp || {}, { keepExistingPassword: true });
+  const existingSmtpPass = req.user.smtp_pass_enc || '';
+  const resolvedSmtpPass = smtpInput.pass === null ? existingSmtpPass : (smtpInput.pass ? encryptSecret(smtpInput.pass) : null);
+
+  if (smtpInput.enabled) {
+    const validationTarget = {
+      ...smtpInput,
+      pass: smtpInput.pass === null ? (existingSmtpPass ? '***' : '') : smtpInput.pass
+    };
+    const smtpErrors = validateSmtpInput(validationTarget);
+    if (smtpErrors.length) return res.status(400).json({ error: smtpErrors[0] });
+  }
+
   await db.run(
     `UPDATE users
-     SET display_name = ?, username = ?, email_alerts_enabled = ?, timezone = ?
+     SET display_name = ?, username = ?, email_alerts_enabled = ?, timezone = ?,
+         smtp_enabled = ?, smtp_host = ?, smtp_port = ?, smtp_secure = ?, smtp_user = ?, smtp_pass_enc = ?, smtp_from = ?
      WHERE id = ?`,
     [
       parsed.data.displayName,
       username,
       parsed.data.emailAlertsEnabled === undefined ? req.user.email_alerts_enabled : (parsed.data.emailAlertsEnabled ? 1 : 0),
       parsed.data.timezone || req.user.timezone || 'Asia/Kolkata',
+      smtpInput.enabled ? 1 : 0,
+      smtpInput.host || null,
+      smtpInput.port,
+      smtpInput.secure ? 1 : 0,
+      smtpInput.user || null,
+      resolvedSmtpPass,
+      smtpInput.from || null,
       req.user.id
     ]
   );
 
   const user = await db.get(
     `SELECT id, email, username, role, display_name, pan, onboarding_completed, onboarding_step, onboarding_json,
-            email_alerts_enabled, timezone, created_at
+            email_alerts_enabled, timezone, smtp_enabled, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass_enc, smtp_from, created_at
      FROM users
      WHERE id = ?`,
     [req.user.id]
@@ -1382,10 +1491,10 @@ app.post('/api/admin/test-mail', auth(true), requireAdmin, async (req, res) => {
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: 'Invalid test mail payload' });
-  if (!isMailConfigured()) {
-    const mailStatus = getPublicMailStatus();
+  const mailStatus = getPublicMailStatus(req.user);
+  if (!mailStatus.configured) {
     return res.status(503).json({
-      error: `SMTP is not configured on the server yet. Missing: ${mailStatus.missingFields.join(', ') || 'SMTP details'}.`
+      error: `SMTP is not configured yet. Missing: ${mailStatus.missingFields.join(', ') || 'SMTP details'}. Configure user SMTP in Settings or set app SMTP env vars on backend.`
     });
   }
 
@@ -1396,7 +1505,8 @@ app.post('/api/admin/test-mail', auth(true), requireAdmin, async (req, res) => {
     to: parsed.data.to,
     subject,
     text: body,
-    html: `<div style="font-family:Segoe UI,sans-serif;color:#172033;line-height:1.6"><h2>${subject}</h2><p>${body}</p><p>Sent from the MarketPulse admin panel.</p></div>`
+    html: `<div style="font-family:Segoe UI,sans-serif;color:#172033;line-height:1.6"><h2>${subject}</h2><p>${body}</p><p>Sent from the MarketPulse admin panel.</p></div>`,
+    smtpConfig: getUserMailConfig(req.user)
   });
 
   await db.run(`INSERT INTO logs(level, message) VALUES (?, ?)`, ['info', `Admin test mail sent to ${parsed.data.to}`]);
@@ -1465,7 +1575,7 @@ async function start() {
   await seed();
 
   if (!isMailConfigured()) {
-    await db.run(`INSERT INTO logs(level, message) VALUES (?, ?)`, ['warn', 'SMTP is not configured. Email alerts will be skipped until SMTP env vars are set.']);
+    await db.run(`INSERT INTO logs(level, message) VALUES (?, ?)`, ['warn', 'App-level SMTP env vars are not configured. Users can still send alerts by configuring SMTP in their Settings.']);
   }
 
   cron.schedule('* * * * *', async () => {

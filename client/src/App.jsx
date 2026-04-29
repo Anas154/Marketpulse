@@ -50,9 +50,34 @@ const hoverLinePlugin = {
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, hoverLinePlugin);
 
 const TIMEFRAMES = ['1D', '1W', '1M', '3M', '1Y'];
-const AUTH_INITIAL_STATE = { identifier: '', password: '', email: '', username: '', displayName: '' };
+const AUTH_INITIAL_STATE = {
+  identifier: '',
+  password: '',
+  email: '',
+  username: '',
+  displayName: '',
+  smtpEnabled: false,
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: '587',
+  smtpSecure: false,
+  smtpUser: '',
+  smtpPass: '',
+  smtpFrom: ''
+};
 const NEW_USER_INITIAL_STATE = { email: '', username: '', displayName: '', password: '', role: 'user' };
-const SETTINGS_INITIAL_STATE = { displayName: '', username: '', timezone: 'Asia/Kolkata', emailAlertsEnabled: true };
+const SETTINGS_INITIAL_STATE = {
+  displayName: '',
+  username: '',
+  timezone: 'Asia/Kolkata',
+  emailAlertsEnabled: true,
+  smtpEnabled: false,
+  smtpHost: 'smtp.gmail.com',
+  smtpPort: '587',
+  smtpSecure: false,
+  smtpUser: '',
+  smtpPass: '',
+  smtpFrom: ''
+};
 const ONBOARDING_INITIAL_STATE = {
   consentAccepted: false,
   displayName: '',
@@ -374,7 +399,12 @@ function App() {
   const userDisplayName = formatDisplayName(user?.displayName);
   const portfolio = boot?.portfolio || [];
   const portfolioSummary = boot?.portfolioSummary || {};
-  const mailStatus = boot?.mailStatus || { configured: false, provider: 'unknown', missingFields: [] };
+  const mailStatus = boot?.mailStatus || {
+    configured: false,
+    provider: 'unknown',
+    usingUserSmtp: false,
+    missingFields: []
+  };
   const hasPortfolioImportDetails = Boolean(onboardingForm.importProvider.trim() && onboardingForm.importAssetTypes.length);
   const selectedImportSource = PORTFOLIO_IMPORT_SOURCE_OPTIONS.find((option) => option.value === onboardingForm.importSource);
 
@@ -554,7 +584,14 @@ function App() {
       displayName: boot.user.displayName || '',
       username: boot.user.username || '',
       timezone: boot.user.timezone || 'Asia/Kolkata',
-      emailAlertsEnabled: boot.user.emailAlertsEnabled ?? true
+      emailAlertsEnabled: boot.user.emailAlertsEnabled ?? true,
+      smtpEnabled: boot.user.smtpEnabled ?? false,
+      smtpHost: boot.user.smtpHost || 'smtp.gmail.com',
+      smtpPort: String(boot.user.smtpPort || 587),
+      smtpSecure: boot.user.smtpSecure ?? false,
+      smtpUser: boot.user.smtpUser || '',
+      smtpPass: '',
+      smtpFrom: boot.user.smtpFrom || ''
     });
     setOnboardingForm({
       consentAccepted: Boolean(boot.user.onboarding?.consentAccepted),
@@ -667,7 +704,16 @@ function App() {
             email: authForm.email.trim(),
             username: authForm.username.trim(),
             displayName: authForm.displayName.trim(),
-            password: authForm.password
+            password: authForm.password,
+            smtp: {
+              enabled: Boolean(authForm.smtpEnabled),
+              host: authForm.smtpHost.trim(),
+              port: Number(authForm.smtpPort || 587),
+              secure: Boolean(authForm.smtpSecure),
+              user: authForm.smtpUser.trim(),
+              pass: authForm.smtpPass,
+              from: authForm.smtpFrom.trim() || authForm.smtpUser.trim()
+            }
           };
 
       const response = await apiFetch(endpoint, {
@@ -826,7 +872,21 @@ function App() {
     try {
       const response = await apiFetch('/api/profile', {
         method: 'PATCH',
-        body: JSON.stringify(settingsForm)
+        body: JSON.stringify({
+          displayName: settingsForm.displayName,
+          username: settingsForm.username,
+          timezone: settingsForm.timezone,
+          emailAlertsEnabled: settingsForm.emailAlertsEnabled,
+          smtp: {
+            enabled: Boolean(settingsForm.smtpEnabled),
+            host: settingsForm.smtpHost.trim(),
+            port: Number(settingsForm.smtpPort || 587),
+            secure: Boolean(settingsForm.smtpSecure),
+            user: settingsForm.smtpUser.trim(),
+            pass: settingsForm.smtpPass,
+            from: settingsForm.smtpFrom.trim() || settingsForm.smtpUser.trim()
+          }
+        })
       });
       setBoot((current) => ({ ...current, user: response.user }));
       setNotice({ type: 'success', message: 'Profile saved successfully.' });
@@ -1183,6 +1243,85 @@ function App() {
                   required
                 />
               </div>
+
+              <label className="choice-card">
+                <input
+                  type="checkbox"
+                  checked={authForm.smtpEnabled}
+                  onChange={(event) => setAuthForm((current) => ({ ...current, smtpEnabled: event.target.checked }))}
+                />
+                <div>
+                  <strong>Configure my SMTP now</strong>
+                  <span>Use your own sender from day one. Recommended: Gmail app password, not your normal Gmail password.</span>
+                </div>
+              </label>
+
+              {authForm.smtpEnabled ? (
+                <div className="field-grid">
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="signupSmtpHost">SMTP host</label>
+                    <input
+                      id="signupSmtpHost"
+                      className="field-input"
+                      value={authForm.smtpHost}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpHost: event.target.value }))}
+                      placeholder="smtp.gmail.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="signupSmtpPort">SMTP port</label>
+                    <input
+                      id="signupSmtpPort"
+                      className="field-input"
+                      value={authForm.smtpPort}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpPort: event.target.value }))}
+                      placeholder="587"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="signupSmtpUser">SMTP user</label>
+                    <input
+                      id="signupSmtpUser"
+                      className="field-input"
+                      value={authForm.smtpUser}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpUser: event.target.value }))}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="signupSmtpFrom">From email</label>
+                    <input
+                      id="signupSmtpFrom"
+                      className="field-input"
+                      value={authForm.smtpFrom}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpFrom: event.target.value }))}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="signupSmtpPass">SMTP password or app password</label>
+                    <input
+                      id="signupSmtpPass"
+                      className="field-input"
+                      type="password"
+                      value={authForm.smtpPass}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpPass: event.target.value }))}
+                      placeholder="App password"
+                    />
+                  </div>
+                  <label className="choice-card">
+                    <input
+                      type="checkbox"
+                      checked={authForm.smtpSecure}
+                      onChange={(event) => setAuthForm((current) => ({ ...current, smtpSecure: event.target.checked }))}
+                    />
+                    <div>
+                      <strong>Use SSL/TLS</strong>
+                      <span>Enable for port 465. Keep off for STARTTLS port 587.</span>
+                    </div>
+                  </label>
+                </div>
+              ) : null}
             </>
           )}
 
@@ -1352,7 +1491,7 @@ function App() {
                   <span>
                     {mailStatus.configured
                       ? 'Alert emails can be sent from the app as soon as your rules are active.'
-                      : 'This app uses a server-managed SMTP sender. Do not paste your personal Gmail password into alert setup. An admin must finish SMTP configuration first.'}
+                      : 'Open Settings after onboarding and configure SMTP for your account, or ask admin to set shared SMTP env vars on backend.'}
                   </span>
                 </div>
               </div>
@@ -1858,8 +1997,8 @@ function App() {
               <div>
                 <strong>SMTP is not configured yet</strong>
                 <span>
-                  Alert rules can still be created, but delivery will stay paused until the server owner finishes SMTP setup.
-                  For Gmail, use an App Password on the server side after enabling 2-Step Verification. Do not share your personal Gmail password in this user flow.
+                  Alert rules can still be created, but delivery will stay paused until SMTP is configured.
+                  Open Settings to add your account SMTP or configure shared SMTP env vars on backend. For Gmail, use an App Password after enabling 2-Step Verification.
                 </span>
               </div>
             </div>
@@ -2184,6 +2323,107 @@ function App() {
 
             <div className="stack">
               <div>
+                <p className="section-card__kicker">SMTP setup</p>
+                <h3 className="section-card__subheading">Configure personal sender credentials for this account</h3>
+              </div>
+
+              <label className="choice-card">
+                <input
+                  type="checkbox"
+                  checked={settingsForm.smtpEnabled}
+                  onChange={(event) => setSettingsForm((current) => ({ ...current, smtpEnabled: event.target.checked }))}
+                />
+                <div>
+                  <strong>Use my own SMTP for this account</strong>
+                  <span>When enabled, alerts and admin test-mail prefer your SMTP. If disabled, app-level SMTP env vars are used.</span>
+                </div>
+              </label>
+
+              {settingsForm.smtpEnabled ? (
+                <div className="field-grid field-grid--quad">
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="settingsSmtpHost">SMTP host</label>
+                    <input
+                      id="settingsSmtpHost"
+                      className="field-input"
+                      value={settingsForm.smtpHost}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpHost: event.target.value }))}
+                      placeholder="smtp.gmail.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="settingsSmtpPort">SMTP port</label>
+                    <input
+                      id="settingsSmtpPort"
+                      className="field-input"
+                      value={settingsForm.smtpPort}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpPort: event.target.value }))}
+                      placeholder="587"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="settingsSmtpUser">SMTP user</label>
+                    <input
+                      id="settingsSmtpUser"
+                      className="field-input"
+                      value={settingsForm.smtpUser}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpUser: event.target.value }))}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="settingsSmtpFrom">From email</label>
+                    <input
+                      id="settingsSmtpFrom"
+                      className="field-input"
+                      value={settingsForm.smtpFrom}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpFrom: event.target.value }))}
+                      placeholder="you@example.com"
+                    />
+                  </div>
+                  <div className="field-group">
+                    <label className="field-label" htmlFor="settingsSmtpPass">SMTP password or app password</label>
+                    <input
+                      id="settingsSmtpPass"
+                      className="field-input"
+                      type="password"
+                      value={settingsForm.smtpPass}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpPass: event.target.value }))}
+                      placeholder="Leave blank to keep existing password"
+                    />
+                    <p className="field-help">Use a provider app password. Leave blank if you only update host/user/from and want to keep the saved password.</p>
+                  </div>
+                  <label className="choice-card">
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.smtpSecure}
+                      onChange={(event) => setSettingsForm((current) => ({ ...current, smtpSecure: event.target.checked }))}
+                    />
+                    <div>
+                      <strong>Use SSL/TLS</strong>
+                      <span>Enable for port 465. Keep disabled for STARTTLS on port 587.</span>
+                    </div>
+                  </label>
+                </div>
+              ) : null}
+
+              <div className="callout">
+                <Mail size={18} />
+                <div>
+                  <strong>{mailStatus.usingUserSmtp ? 'Using your SMTP credentials' : mailStatus.configured ? 'Using app-level SMTP credentials' : 'SMTP not configured yet'}</strong>
+                  <span>
+                    {mailStatus.usingUserSmtp
+                      ? 'Your alerts are sent with your account SMTP settings.'
+                      : mailStatus.configured
+                        ? 'Alerts fall back to backend SMTP env vars for all users without personal SMTP.'
+                        : 'Configure personal SMTP above or set backend SMTP env vars so alerts can be delivered.'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="stack">
+              <div>
                 <p className="section-card__kicker">Portfolio import setup</p>
                 <h3 className="section-card__subheading">Collect the same details you would provide to a broker or CAS-driven import flow</h3>
               </div>
@@ -2197,11 +2437,11 @@ function App() {
               <div className="callout">
                 <Mail size={18} />
                 <div>
-                  <strong>{mailStatus.configured ? 'SMTP is configured for alerts' : 'SMTP still needs admin setup'}</strong>
+                  <strong>{mailStatus.configured ? 'SMTP path is ready for alerts' : 'SMTP still needs setup'}</strong>
                   <span>
                     {mailStatus.configured
-                      ? 'Once imported holdings are tracked, your alert emails can use the shared application sender.'
-                      : 'If you are self-hosting MarketPulse with Gmail, create an App Password from Google Account security settings and place it in the server SMTP variables.'}
+                      ? 'Once imported holdings are tracked, alert emails can be delivered with your selected SMTP path.'
+                      : 'Set user SMTP above or configure server SMTP env vars. Gmail needs a 16-character app password, not your normal Gmail password.'}
                   </span>
                 </div>
               </div>

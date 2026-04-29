@@ -79,8 +79,15 @@ SMTP_SECURE=false
 4. Copy the 16-character password
 5. Paste as SMTP_PASS
 
-#### Option 2: Render Deployment (Production)
-See `RENDER_DEPLOYMENT.md` for PostgreSQL + SMTP setup
+#### Option 2: User-specific SMTP (Preferred for multi-user)
+Users can set their own SMTP credentials in Settings or at Sign Up:
+- SMTP Host
+- SMTP Port
+- SMTP User
+- SMTP App Password
+- SMTP From
+
+App-level SMTP in backend env vars remains as fallback for users who do not configure personal SMTP.
 
 ---
 
@@ -109,11 +116,10 @@ Frontend: http://localhost:3000/Marketpulse/
 Database: ./server/data/marketpulse.db
 ```
 
-### Production (Render)
+### Production (Northflank)
 ```
-Backend: https://marketpulse-ivas.onrender.com
-Frontend: https://anas154.github.io/Marketpulse/
-Database: PostgreSQL (to be configured)
+Backend + Frontend: Northflank deployment URL (single Docker service)
+Database: SQLite with persistent volume mount (or PostgreSQL if you migrate later)
 ```
 
 ---
