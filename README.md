@@ -116,6 +116,7 @@ Then open `http://localhost:4000`
   - `NORTHFLANK_CREDENTIALS_ID`
 - Optional for GitHub Pages frontend builds:
   - `NORTHFLANK_API_BASE_URL` (for `.github/workflows/pages.yml`)
+  - The Northflank deploy workflow discovers the live service URL from Northflank for verification, so this secret is only needed by the separate GitHub Pages build.
 
 ## Cost Control Guardrails
 
@@ -138,7 +139,7 @@ Current enforced rules:
 - Service/job/addon/volume creation beyond the approved service is disallowed by policy
 - GitHub workflow cron/schedule triggers disallowed
 
-`northflank-deploy.yml` applies the approved Northflank service configuration, runs policy enforcement before deploy, deploys the Docker image, reapplies runtime guardrails, and verifies `/health` plus `/api/bootstrap`.
+`northflank-deploy.yml` applies the approved Northflank service configuration, runs policy enforcement before deploy, deploys the Docker image, reapplies runtime guardrails, discovers the live public Northflank URL, and verifies `/health` plus `/api/bootstrap`.
 
 The app uses an in-process Node cron loop for market refresh/alert checks. It does not create a Northflank cron job, so it does not consume the Northflank job quota.
 
