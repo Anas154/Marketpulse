@@ -75,7 +75,7 @@ async function fetchJsonWithRetries(url, attempts = DEFAULT_ATTEMPTS, delayMs = 
     }
   }
 
-  throw lastError;
+  throw new Error(`Live check failed for ${url}: ${lastError?.message || lastError}`);
 }
 
 async function main() {
@@ -83,14 +83,17 @@ async function main() {
   const projectId = requiredEnv('NORTHFLANK_PROJECT_ID');
   const serviceId = requiredEnv('NORTHFLANK_SERVICE_ID');
 
+  const discoveredUrl = await discoverBaseUrl({ token, projectId, serviceId });
   const override = optionalEnv('NORTHFLANK_API_BASE_URL');
   const overrideUrl = normalizeBaseUrl(override);
+  if (override && overrideUrl !== discoveredUrl) {
+    console.log('Ignoring NORTHFLANK_API_BASE_URL for deploy verification; using Northflank-discovered DNS.');
+  }
   if (override && !overrideUrl) {
-    console.log('Ignoring NORTHFLANK_API_BASE_URL because it is not an absolute http(s) URL.');
+    console.log('NORTHFLANK_API_BASE_URL is not an absolute http(s) URL.');
   }
 
-  const discoveredUrl = await discoverBaseUrl({ token, projectId, serviceId });
-  const baseUrl = overrideUrl || discoveredUrl;
+  const baseUrl = discoveredUrl;
 
   const health = await fetchJsonWithRetries(`${baseUrl}/health`);
   if (health.status !== 'ok') {
